@@ -25,14 +25,15 @@ module.exports = async (client, postman) => {
         newEarnings.forEach((device, i) => {
             if (device.earned > 0) {
                 embed.fields.push({
-                    name: device.uuid,
+                    name: device.title,
                     value: `
-                    Earned: + ${(device.earned - oldEarnings[i]?.earned ?? 0).toFixed(2)}$
-                    Traffic: + ${bytesToSize(device.bw - oldEarnings[i]?.bw ?? 0)}
+                    Banned: ${device.banned ? "Yes" : "No"}
+                    Earned: + ${(device.earned - (oldEarnings[i]?.earned ?? 0)).toFixed(2)}$
+                    Traffic: + ${bytesToSize(device.bw - (oldEarnings[i]?.bw ?? 0))}
                     Rate: ${device.rate}
                     Lifetime balance: ${device.earned_total}$
                     Lifetime traffic: ${bytesToSize(device.total_bw)}
-                    Country: :flag_${device.cn}:
+                    Country: :flag_${device.country}:
                     `,
                 });
             }

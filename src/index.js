@@ -5,6 +5,8 @@ const { Webhook } = require("simple-discord-webhooks");
 const { log, delay, getOld } = require("./util.js");
 const handleTotal = require("./handleTotal.js");
 const handlePerDevice = require("./handlePerDevice.js");
+const handleGroupDevices = require("./handleGroupDevices.js");
+const handleReferrals = require("./handleReferrals.js");
 const handleTransactions = require("./handleTransactions.js");
 const config = require("../config.js");
 const pkg = require("../package.json");
@@ -12,13 +14,14 @@ const pkg = require("../package.json");
 if (process.env.WEBHOOK_URL) config.discordWebhookURL = process.env.WEBHOOK_URL;
 if (process.env.AUTH) config.oauthRefreshToken = process.env.AUTH;
 if (process.env.MODE) {
-    let options = ["total", "perDevice", "transactions", "all"];
+    let options = ["total", "perDevice", "groupDevice", "transactions", "all"];
     if (options.includes(process.env.MODE)) config.modes = [process.env.MODE];
 }
 if (process.env.DELAY) config.delay = process.env.DELAY;
 const client = new Client();
 const postman = new Webhook(config.discordWebhookURL);
 const webhookReg = /https:\/\/discord.com\/api\/webhooks\/\d{18}\/.+/;
+const files = ["devices", "referrals", "stats", "transactions"];
 
 client.login({
     authMethod: config.authMethod,
@@ -54,53 +57,65 @@ const run = async () => {
 
     if (!test) process.exit(1);
     if (!fs.existsSync("./data/")) fs.mkdirSync("./data");
-    if (!fs.existsSync("./data/devices.json") || !fs.existsSync("./data/stats.json") || !fs.existsSync("./data/transactions.json")) {
-        fs.writeFileSync("./data/devices.json", "{}");
-        fs.writeFileSync("./data/stats.json", "{}");
-        fs.writeFileSync("./data/transactions.json", "{}");
-    }
-    if (Object.entries(getOld("devices")).length === 0 || Object.entries(getOld("stats")).length === 0) {
-        log("No previous data detected, downloading...", "info");
 
-        const devices = await client.devices();
-        fs.writeFileSync("./data/devices.json", JSON.stringify(devices, null, 1), "utf8");
-        const stats = await client.stats();
-        fs.writeFileSync("./data/stats.json", JSON.stringify(stats, null, 1), "utf8");
-        const transactions = await client.transactions();
-        fs.writeFileSync("./data/transactions.json", JSON.stringify(transactions, null, 1), "utf8");
+    files.forEach(async (f) => {
+        if (!fs.existsSync(`./data/${f}.json`)) fs.writeFileSync(`./data/${f}.json`, "{}");
 
-        log("Previous data downloaded", "success");
-    }
+        if (Object.entries(getOld(f)).length === 0) {
+            log(`No previous ${f} detected, downloading...`, "info");
+            let data;
+
+            switch (f) {
+                case "devices":
+                    data = await client.devices();
+                    break;
+                case "stats":
+                    data = await client.stats();
+                    break;
+                case "referrals":
+                    data = await client.referrals();
+                    break;
+                case "transactions":
+                    data = await client.transactions();
+                    break;
+            }
+
+            fs.writeFileSync(`./data/${f}.json`, JSON.stringify(data, null, 1), "utf8");
+            log(`Previous ${f} downloaded`, "success");
+        }
+    });
 
     log("Waiting for a balance update...", "info");
 
     await checkUpdate();
 
-    let time = new Date();
     while (test) {
-        let newTime = new Date();
-        let diff = newTime.getUTCHours() === 0 ? -1 : time.getUTCHours() - newTime.getUTCHours();
-        if (diff < 0) {
-            time = newTime;
-            await delay(1000 * config.delay);
+        let counters = await client.counters();
 
-            config.modes.forEach((m) => {
-                switch (m) {
-                    case "total":
-                        handleTotal(client, postman);
-                        break;
-                    case "perDevice":
-                        handlePerDevice(client, postman);
-                        break;
-                    case "transactions":
-                        handleTransactions(client, postman);
-                        break;
-                }
-            });
+        await delay(counters.balance_sync);
+        await delay(1000 * config.delay);
 
-            await checkUpdate();
-        }
-        await delay(1000 * 60);
+        config.modes.forEach((m) => {
+            switch (m) {
+                case "total":
+                    handleTotal(client, postman);
+                    break;
+                case "perDevice":
+                    handlePerDevice(client, postman);
+                    break;
+                case "groupDevices":
+                    handleGroupDevices(client, postman);
+                    break;
+                case "referrals":
+                    handleReferrals(client, postman);
+                    break;
+                case "transactions":
+                    handleTransactions(client, postman);
+                    break;
+            }
+        });
+
+        await checkUpdate();
     }
 };
 
